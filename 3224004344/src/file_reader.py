@@ -7,8 +7,13 @@
 
 from errors import FileReadError
 
-# 按优先级依次尝试的编码
-ENCODINGS = ("utf-8", "gbk", "gb18030")
+# 按优先级依次尝试的编码。
+# 首选用 utf-8-sig 而非 utf-8：前者能自动剥离文件开头的 BOM
+# （Windows 记事本保存 UTF-8 时会写入 BOM），对不带 BOM 的文件同样有效。
+ENCODINGS = ("utf-8-sig", "gbk", "gb18030")
+
+# 字节顺序标记，个别环境下可能残留，读取后统一清除
+BOM = "\ufeff"
 
 
 def read_text(path):
@@ -43,6 +48,9 @@ def read_text(path):
                 text = file.read().decode("utf-8", errors="ignore")
         except OSError as error:
             raise FileReadError(f"无法读取文件：{path}（{error}）")
+
+    # 清除可能残留的 BOM，避免它被当成一个词参与相似度统计
+    text = text.lstrip(BOM)
 
     if not text.strip():
         raise FileReadError(f"文件内容为空：{path}")
