@@ -1,9 +1,10 @@
 """论文查重程序的单元测试。
 
 覆盖全部 6 个模块（errors / file_reader / text_processor / similarity /
-answer_writer / main），共 38 个用例，按「等价类划分 + 边界值 + 异常路径」
+answer_writer / main），共 39 个用例，按「等价类划分 + 边界值 + 异常路径」
 三类方法设计，白盒覆盖每个函数的正常分支与异常分支；其中用例 36~38
-是依据覆盖率报告的 Missing 列补充的定向用例。
+是依据覆盖率报告的 Missing 列补充的定向用例，用例 39 为交付前
+端到端验收发现的 UTF-8 BOM 缺陷所补的回归用例。
 
 运行方式（在 3224004344 目录下执行）：
     py -3.13 -m unittest test_main -v
@@ -138,6 +139,15 @@ class TestFileReader(TempDirTestCase):
         with mock.patch("builtins.open", side_effect=fake_open):
             with self.assertRaises(FileReadError):
                 read_text(path)
+
+    def test_39_utf8_bom_is_stripped(self):
+        """边界值：带 BOM 的 UTF-8 文件（Windows 记事本保存的默认格式）
+        读取后不应残留 BOM 字符，否则它会被当作一个词参与相似度统计。
+        """
+        path = self.make_file("bom.txt", "软件工程", encoding="utf-8-sig")
+        text = read_text(path)
+        self.assertEqual(text, "软件工程")
+        self.assertNotIn("\ufeff", text)
 
 
 class TestTextProcessor(unittest.TestCase):
