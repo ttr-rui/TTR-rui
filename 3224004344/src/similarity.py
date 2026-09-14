@@ -1,6 +1,6 @@
 """相似度计算模块。
 
-负责在词频向量之上计算余弦相似度，并对外提供「给出两个文件路径、
+负责在特征向量之上计算余弦相似度，并对外提供「给出两个文件路径、
 返回重复率」的编排入口，是入口层与文本处理层之间的桥梁。
 """
 
@@ -11,7 +11,7 @@ from text_processor import build_word_freq, tokenize
 
 
 def cosine_similarity(freq_a, freq_b):
-    """计算两个词频向量的余弦相似度。
+    """计算两个特征向量的余弦相似度。
 
     cos(theta) = A·B / (|A| * |B|)，只遍历两篇文章共有的词来计算内积，
     避免遍历整个词表，这是稀疏向量的常见优化。
@@ -45,7 +45,8 @@ def cosine_similarity(freq_a, freq_b):
 def calc_similarity(original_path, copied_path):
     """计算两个文件所载文章的重复率。
 
-    依次完成：读取原文与抄袭版 → 分词 → 统计词频 → 计算余弦相似度。
+    依次完成：读取原文与抄袭版 → 切分 2-gram 特征 → 统计特征频率
+    → 计算余弦相似度。
 
     Args:
         original_path: 原文文件路径。
