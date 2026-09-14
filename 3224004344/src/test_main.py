@@ -1,12 +1,13 @@
 """论文查重程序的单元测试。
 
 覆盖全部 6 个模块（errors / file_reader / text_processor / similarity /
-answer_writer / main），共 39 个用例，按「等价类划分 + 边界值 + 异常路径」
+answer_writer / main），共 42 个用例，按「等价类划分 + 边界值 + 异常路径」
 三类方法设计，白盒覆盖每个函数的正常分支与异常分支；其中用例 36~38
 是依据覆盖率报告的 Missing 列补充的定向用例，用例 39 为交付前
-端到端验收发现的 UTF-8 BOM 缺陷所补的回归用例。
+端到端验收发现的 UTF-8 BOM 缺陷所补的回归用例，用例 40~42 为特征
+粒度由「分词词袋」升级为「汉字 2-gram」后新增的顺序敏感性用例。
 
-运行方式（在 3224004344 目录下执行）：
+运行方式（在 personal program 目录下执行）：
     py -3.13 -m unittest test_main -v
     py -3.13 -m coverage run -m unittest test_main
 """
@@ -154,11 +155,10 @@ class TestTextProcessor(unittest.TestCase):
     """用例 10-14：文本处理（text_processor.py）。"""
 
     def test_10_tokenize_filters_punctuation(self):
-        """分词结果中不应残留任何标点符号。"""
-        words = list(tokenize("今天，天气晴。"))
-        self.assertNotIn("，", words)
-        self.assertNotIn("。", words)
-        self.assertIn("天气", words)
+        """标点与空白不参与构词：跨标点的相邻两字应拼成一个特征。"""
+        self.assertEqual(
+            list(tokenize("今天，天气晴。")), ["今天", "天天", "天气", "气晴"]
+        )
 
     def test_11_tokenize_returns_generator(self):
         """返回值应为生成器，支持边分词边统计以降低内存峰值。"""
@@ -177,6 +177,18 @@ class TestTextProcessor(unittest.TestCase):
     def test_14_build_word_freq_empty(self):
         """边界值：空输入的词频字典长度为 0。"""
         self.assertEqual(len(build_word_freq([])), 0)
+
+    def test_40_tokenize_slices_ngram_features(self):
+        """特征粒度：标点剔除后，n 个有效字符应切出 n-1 个 2-gram 特征。"""
+        self.assertEqual(list(tokenize("软件工程")), ["软件", "件工", "工程"])
+        self.assertEqual(
+            list(tokenize("软，件。工！程")), ["软件", "件工", "工程"]
+        )
+
+    def test_41_short_text_has_no_feature(self):
+        """边界值：有效字符不足 2 个时切不出任何特征。"""
+        self.assertEqual(list(tokenize("好")), [])
+        self.assertEqual(list(tokenize("！")), [])
 
 
 class TestSimilarity(TempDirTestCase):
@@ -252,6 +264,19 @@ class TestSimilarity(TempDirTestCase):
     def test_37_zero_vector_is_zero(self):
         """覆盖率补测：向量模长为 0 时直接返回 0，不触发除零。"""
         self.assertEqual(cosine_similarity({"词": 0}, {"词": 1}), 0.0)
+
+    def test_42_word_order_affects_similarity(self):
+        """顺序敏感：把相邻两字互换后，相似度必须明显低于 1。
+
+        这是本算法区别于「词袋模型」的关键性质。词袋模型只统计词的出现
+        次数、忽略词序，会把下面这组「只调换了字序」的文本判为完全重复；
+        改用 2-gram 特征后，乱序破坏了大部分特征，相似度随之下降。
+        """
+        freq_a = build_word_freq(tokenize("天气晴朗我去看电影"))
+        freq_b = build_word_freq(tokenize("气天朗晴我去看影电"))
+        value = cosine_similarity(freq_a, freq_b)
+        self.assertLess(value, 1.0)
+        self.assertGreater(value, 0.0)
 
 
 class TestAnswerWriter(TempDirTestCase):
