@@ -1,55 +1,57 @@
 """文本处理模块。
 
-负责把原始文本转换成词频向量：先统一替换标点与空白，
-再用 jieba 精确模式分词，最后统计每个词的出现次数。
+负责把原始文本转换成用于比对的「特征向量」：先用正则剔除标点、
+空白等噪声字符，只保留汉字与字母数字，再按连续 N 个字符滑动取窗
+切成 N-gram 特征，最后统计每个特征的出现次数。
+
+为什么用 N-gram 而不是分词后的词袋：
+    词袋模型只统计词的出现次数，完全忽略词序。对于「把相邻两字互换
+    位置」这类抄袭（例如 dis 系列样例），每个词的出现次数几乎不变，
+    词袋模型会把明显被改动的文本误判为高度重复。改用 2-gram（连续
+    两个字符组成一个特征）后，特征本身携带了局部顺序信息：乱序会
+    破坏掉大量 2-gram，相似度随之下降，判定结果更符合直觉。
 """
 
+import re
 from collections import Counter
 
-import jieba
+# N-gram 的窗口大小：2 表示「连续两个字符」构成一个特征
+NGRAM_SIZE = 2
 
-# 关闭 jieba 加载词典时的日志输出，保持终端干净（60 高于 CRITICAL）
-jieba.setLogLevel(60)
-
-# 标点符号与空白字符不携带语义，分词前统一替换为空格
-NOISE_CHARS = set(
-    "，。、；：？！“”‘’（）《》〈〉【】〔〕—…·「」『』"
-    ",.;:?!\"'()[]{}<>|/\\-_=+*&^%$#@~` \t\r\n\v\f\u3000"
-)
-
-# 预构建翻译表：str.translate 在 C 层一次性完成全部替换，
-# 避免在分词后对每个 token 逐字符判断是否属于标点
-PUNCT_TABLE = str.maketrans({char: " " for char in NOISE_CHARS})
+# 只保留汉字与字母数字；标点、空白等噪声字符统统一并剔除
+NOISE_PATTERN = re.compile(r"[\W_]+", re.UNICODE)
 
 
 def tokenize(text):
-    """把文本切分成词，返回有效词的生成器。
+    """把文本切分成 N-gram 特征，返回特征生成器。
 
-    分词前先用 str.translate 在 C 层把标点统一替换成空格，因此分词
-    结果里不再混入标点，过滤条件简化为一次 strip()；以生成器形式
-    返回，调用方可以边分词边统计，无需在内存中落地完整词列表。
+    先用正则一次性剔除标点与空白，再对保留下来的字符序列按
+    NGRAM_SIZE 滑动取窗；以生成器形式返回，调用方可以边取特征边
+    统计，无需在内存中落地完整的特征列表。
 
     Args:
-        text: 待分词的文本。
+        text: 待处理的文本。
 
     Returns:
-        过滤掉标点与空白之后的词生成器。
+        剔除噪声之后的 N-gram 特征生成器；文本有效字符不足
+        NGRAM_SIZE 个时返回空生成器。
     """
-    cleaned = text.translate(PUNCT_TABLE)
+    cleaned = NOISE_PATTERN.sub("", text)
     return (
-        word for word in jieba.cut(cleaned, cut_all=False) if word.strip()
+        cleaned[i:i + NGRAM_SIZE]
+        for i in range(len(cleaned) - NGRAM_SIZE + 1)
     )
 
 
 def build_word_freq(tokens):
-    """统计词频，构造「词 → 出现次数」的映射。
+    """统计特征频率，构造「特征 → 出现次数」的映射。
 
-    直接消费词迭代器，不产生中间列表。
+    直接消费特征迭代器，不产生中间列表。
 
     Args:
-        tokens: 词的可迭代对象。
+        tokens: 特征的可迭代对象。
 
     Returns:
-        词频计数（Counter，dict 的子类）；输入为空时返回空 Counter。
+        特征计数（Counter，dict 的子类）；输入为空时返回空 Counter。
     """
     return Counter(tokens)
